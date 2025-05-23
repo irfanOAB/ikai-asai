@@ -72,11 +72,9 @@ st.markdown("<h1 class='main-title'>Ikai Asai Enhanced Prompt Generator</h1>", u
 st.markdown("<p class='subtitle'>Create detailed, customized prompts for generating beautiful product visualizations in the Ikai Asai style</p>", 
             unsafe_allow_html=True)
 
-# Get API key from environment or session state
+# Get API key from environment
 def get_api_key():
     api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key and 'api_key' in st.session_state:
-        api_key = st.session_state.api_key
     return api_key
 
 # Original enrich_prompt function preserved for compatibility
@@ -184,55 +182,26 @@ with col1:
                         "Rustic and authentic", "Minimalist and clean"],
                        help="Choose the overall mood or feeling of the image")
     
-    # Generate prompt button
-    if st.button("Generate Enhanced Prompt", disabled=not product_type):
+    # Directly generate image button
+    if st.button("Generate Image", disabled=not product_type):
         if not product_type:
             st.error("Please enter at least the product type.")
         else:
-            enriched_prompt = enhanced_enrich_prompt(product_type, material, color, size, additional_details, 
-                                                   lighting, background, composition, mood)
-            
-            # Store the prompt in session state to display in the right column
-            st.session_state.prompt = enriched_prompt
-            st.success("Prompt generated successfully!")
-
-# Right column to display the generated prompt
-with col2:
-    st.markdown("<h3 class='section-header'>Generated Prompt</h3>", unsafe_allow_html=True)
-    
-    # Display placeholder or generated prompt
-    if 'prompt' in st.session_state and st.session_state.prompt:
-        st.markdown("<div class='prompt-box'>" + st.session_state.prompt + "</div>", unsafe_allow_html=True)
-        
-        # Add copy button functionality with JavaScript
-        st.markdown("""
-        <button class="copy-button" onclick="copyToClipboard()">Copy to Clipboard</button>
-        <script>
-        function copyToClipboard() {
-            const text = document.querySelector('.prompt-box').innerText;
-            navigator.clipboard.writeText(text).then(function() {
-                alert('Prompt copied to clipboard!');
-            }, function(err) {
-                alert('Could not copy text: ' + err);
-            });
-        }
-        </script>
-        """, unsafe_allow_html=True)
-        
-        # Option to generate image directly if API key is available
-        api_key = get_api_key()
-        if api_key:
-            if st.button("Generate Image with this Prompt"):
+            api_key = get_api_key()
+            if not api_key:
+                st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
+            else:
+                enriched_prompt = enhanced_enrich_prompt(product_type, material, color, size, additional_details, 
+                                                       lighting, background, composition, mood)
                 with st.spinner("Generating image..."):
                     try:
                         client = OpenAI(api_key=api_key)
                         response = client.images.generate(
                             model="dall-e-3",
-                            prompt=st.session_state.prompt,
+                            prompt=enriched_prompt,
                             n=1,
                             size="1024x1024"
                         )
-                        
                         if response.data and hasattr(response.data[0], 'url') and response.data[0].url:
                             image_url = response.data[0].url
                             st.session_state.image_url = image_url
@@ -241,33 +210,19 @@ with col2:
                             st.error("No image URL received in the response.")
                     except Exception as e:
                         st.error(f"Error generating image: {e}")
-        else:
-            st.info("To generate images directly, please set your OpenAI API key in the sidebar.")
-        
-        # Explanation of the prompt
-        st.markdown("### How to Use This Prompt")
-        st.markdown("""
-        This enhanced prompt can be used with:
-        - OpenAI's DALL-E models
-        - Midjourney
-        - Stable Diffusion
-        - Other AI image generation tools
-        
-        The prompt combines your product specifications with Ikai Asai's signature aesthetic and your selected photography style preferences.
-        """)
-        
-        # Display generated image if available
-        if 'image_url' in st.session_state and st.session_state.image_url:
-            st.markdown("### Generated Image")
-            try:
-                response = requests.get(st.session_state.image_url)
-                image = Image.open(BytesIO(response.content))
-                st.image(image, use_column_width=True)
-                st.markdown(f"[Download Image]({st.session_state.image_url})")
-            except Exception as e:
-                st.error(f"Error displaying image: {e}")
+
+# Right column to display the generated image
+with col2:
+    st.markdown("<h3 class='section-header'>Generated Image</h3>", unsafe_allow_html=True)
+    if 'image_url' in st.session_state and st.session_state.image_url:
+        try:
+            response = requests.get(st.session_state.image_url)
+            image = Image.open(BytesIO(response.content))
+            st.image(image, use_column_width=True)
+            st.markdown(f"[Download Image]({st.session_state.image_url})")
+        except Exception as e:
+            st.error(f"Error displaying image: {e}")
     else:
-        # Display placeholder
         st.markdown(
             """
             <div style="
@@ -279,42 +234,20 @@ with col2:
                 border: 1px dashed #ccc;
                 margin: 20px 0;
             ">
-                <h3>Your enhanced prompt will appear here</h3>
-                <p>Complete the form and click "Generate Enhanced Prompt"</p>
+                <h3>Your generated image will appear here</h3>
+                <p>Complete the form and click "Generate Image"</p>
             </div>
-            """, 
+            """,
             unsafe_allow_html=True
         )
 
-# Sidebar for settings and API key
+# Sidebar for settings
 with st.sidebar:
     st.markdown("### Settings")
-    
-    # API key input
-    api_key_input = st.text_input(
-        "OpenAI API Key", 
-        type="password",
-        value=get_api_key() or "",
-        help="Enter your OpenAI API key to generate images directly"
-    )
-    
-    if api_key_input:
-        st.session_state.api_key = api_key_input
-        if st.button("Save API Key"):
-            st.success("API key saved for this session!")
-    
-    st.markdown("### About")
-    st.markdown("""
-    This app helps you create detailed prompts for AI image generation tools to produce product images 
-    in the style of Ikai Asai - a brand known for its handcrafted, 
-    minimalist designs with an earthy aesthetic.
-    
-    The generated prompts can be used with:
-    - OpenAI's DALL-E
-    - Midjourney
-    - Stable Diffusion
-    - Other AI image generators
-    """)
+    st.markdown("Ikai Asai Prompt Generator v2.0")
+    st.markdown("Developed by Irfan Khan | Powered by OpenAI DALL-E 3")
+    st.markdown("<small>For feedback: khan.irfan@officeofananyabirla.com</small>", unsafe_allow_html=True)
+
     
     st.markdown("### How It Works")
     st.markdown("""
