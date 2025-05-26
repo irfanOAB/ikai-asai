@@ -279,7 +279,112 @@ with col2:
                         file_name=st.session_state.image_filename,
                         mime="image/png"
                     )
-                    
+            
+            # Add image editing section
+            st.markdown("<h4 class='section-header'>Edit Image</h4>", unsafe_allow_html=True)
+            edit_prompt = st.text_area("Edit Prompt", 
+                                     placeholder="e.g., change the color to black, add more texture, make it taller", 
+                                     help="Describe how you want to modify the image")
+            
+            if st.button("Edit Image", disabled=not edit_prompt):
+                if not edit_prompt:
+                    st.error("Please enter an edit prompt.")
+                else:
+                    api_key = get_api_key()
+                    if not api_key:
+                        st.error("OpenAI API key not found. Please set the OPENAI_API_KEY environment variable.")
+                    else:
+                        with st.spinner("Editing image..."):
+                            try:
+                                client = OpenAI(api_key=api_key)
+                                
+                                # Need to use the saved image file for editing
+                                if 'image_filename' in st.session_state:
+                                    with open(st.session_state.image_filename, "rb") as image_file:
+                                        result = client.images.edit(
+                                            model="gpt-image-1",
+                                            image=image_file,
+                                            prompt=edit_prompt
+                                        )
+                                        
+                                        if hasattr(result, 'data') and len(result.data) > 0:
+                                            # Process the edited image
+                                            if hasattr(result.data[0], 'url') and result.data[0].url:
+                                                # URL-based approach
+                                                edited_image_url = result.data[0].url
+                                                st.session_state.edited_image_url = edited_image_url
+                                                
+                                                # Download the image from the URL
+                                                img_response = requests.get(edited_image_url)
+                                                if img_response.status_code == 200:
+                                                    # Get image bytes
+                                                    edited_image_bytes = img_response.content
+                                                    # Save to BytesIO object for displaying in Streamlit
+                                                    edited_image_bytesio = BytesIO(edited_image_bytes)
+                                                    st.session_state.edited_image_bytes = edited_image_bytes
+                                                    st.session_state.edited_image_bytesio = edited_image_bytesio
+                                                    
+                                                    # Save the edited image to a file
+                                                    timestamp = int(time.time())
+                                                    edited_filename = f"ikai_asai_edited_{timestamp}.png"
+                                                    with open(edited_filename, "wb") as f:
+                                                        f.write(edited_image_bytes)
+                                                    st.session_state.edited_image_filename = edited_filename
+                                                    
+                                                    st.success("Image edited successfully!")
+                                                    
+                                                    # Display the edited image
+                                                    st.markdown("<h4 class='section-header'>Edited Image</h4>", unsafe_allow_html=True)
+                                                    edited_image = Image.open(edited_image_bytesio)
+                                                    st.image(edited_image, use_column_width=True)
+                                                    
+                                                    # Provide download link for edited image
+                                                    with open(edited_filename, "rb") as file:
+                                                        btn = st.download_button(
+                                                            label="Download Edited Image",
+                                                            data=file,
+                                                            file_name=edited_filename,
+                                                            mime="image/png",
+                                                            key="download_edited"
+                                                        )
+                                                else:
+                                                    st.error(f"Failed to download edited image: HTTP {img_response.status_code}")
+                                            elif hasattr(result.data[0], 'b64_json') and result.data[0].b64_json:
+                                                # Base64 approach
+                                                edited_image_bytes = base64.b64decode(result.data[0].b64_json)
+                                                edited_image_bytesio = BytesIO(edited_image_bytes)
+                                                
+                                                # Save the edited image to a file
+                                                timestamp = int(time.time())
+                                                edited_filename = f"ikai_asai_edited_{timestamp}.png"
+                                                with open(edited_filename, "wb") as f:
+                                                    f.write(edited_image_bytes)
+                                                
+                                                st.success("Image edited successfully!")
+                                                
+                                                # Display the edited image
+                                                st.markdown("<h4 class='section-header'>Edited Image</h4>", unsafe_allow_html=True)
+                                                edited_image = Image.open(edited_image_bytesio)
+                                                st.image(edited_image, use_column_width=True)
+                                                
+                                                # Provide download link for edited image
+                                                with open(edited_filename, "rb") as file:
+                                                    btn = st.download_button(
+                                                        label="Download Edited Image",
+                                                        data=file,
+                                                        file_name=edited_filename,
+                                                        mime="image/png",
+                                                        key="download_edited"
+                                                    )
+                                            else:
+                                                st.error("No edited image data found in the response.")
+                                        else:
+                                            st.error("Edit response data is empty.")
+                                else:
+                                    st.error("No image file available for editing.")
+                            except Exception as e:
+                                st.error(f"Error editing image: {e}")
+            
             # Also display the original URL if available
             if 'image_url' in st.session_state:
                 st.markdown(f"[View Original Image]({st.session_state.image_url})")
