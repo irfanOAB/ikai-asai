@@ -2,6 +2,7 @@ import base64
 import os
 import requests
 import streamlit as st
+import time
 from openai import OpenAI
 from PIL import Image
 from io import BytesIO
@@ -196,32 +197,107 @@ with col1:
                 with st.spinner("Generating image..."):
                     try:
                         client = OpenAI(api_key=api_key)
-                        response = client.images.generate(
-                            model="dall-e-3",
-                            prompt=enriched_prompt,
-                            n=1,
-                            size="1024x1024"
-                        )
-                        if response.data and hasattr(response.data[0], 'url') and response.data[0].url:
-                            image_url = response.data[0].url
-                            st.session_state.image_url = image_url
-                            st.success("Image generated successfully!")
-                        else:
-                            st.error("No image URL received in the response.")
+                        
+                        # Generate image
+                        try:
+                            response = client.images.generate(
+                                model="gpt-image-1",
+                                prompt=enriched_prompt,
+                                n=1,
+                                size="1024x1024"
+                            )
+                            
+                            # Process the response
+                            if hasattr(response, 'data') and len(response.data) > 0:
+                                # Try to get image URL or b64_json
+                                if hasattr(response.data[0], 'url') and response.data[0].url:
+                                    # URL-based approach
+                                    image_url = response.data[0].url
+                                    st.session_state.image_url = image_url
+                                    
+                                    # Download the image from the URL
+                                    img_response = requests.get(image_url)
+                                    if img_response.status_code == 200:
+                                        # Get image bytes
+                                        image_bytes = img_response.content
+                                        # Save to BytesIO object for displaying in Streamlit
+                                        image_bytesio = BytesIO(image_bytes)
+                                        st.session_state.image_bytes = image_bytes
+                                        st.session_state.image_bytesio = image_bytesio
+                                        
+                                        # Save the image to a file
+                                        timestamp = int(time.time())
+                                        filename = f"ikai_asai_image_{timestamp}.png"
+                                        with open(filename, "wb") as f:
+                                            f.write(image_bytes)
+                                        st.session_state.image_filename = filename
+                                        
+                                        st.success("Image generated successfully!")
+                                    else:
+                                        st.error(f"Failed to download image: HTTP {img_response.status_code}")
+                                elif hasattr(response.data[0], 'b64_json') and response.data[0].b64_json:
+                                    # Base64 approach
+                                    image_bytes = base64.b64decode(response.data[0].b64_json)
+                                    image_bytesio = BytesIO(image_bytes)
+                                    st.session_state.image_bytes = image_bytes
+                                    st.session_state.image_bytesio = image_bytesio
+                                    
+                                    # Save the image to a file
+                                    timestamp = int(time.time())
+                                    filename = f"ikai_asai_image_{timestamp}.png"
+                                    with open(filename, "wb") as f:
+                                        f.write(image_bytes)
+                                    st.session_state.image_filename = filename
+                                    
+                                    st.success("Image generated successfully!")
+                                else:
+                                    st.error("No image URL or base64 data found in the response.")
+                            else:
+                                st.error("Response data is empty.")
+                        except Exception as e:
+                            st.error(f"Error during image generation: {str(e)}")
                     except Exception as e:
                         st.error(f"Error generating image: {e}")
 
 # Right column to display the generated image
 with col2:
     st.markdown("<h3 class='section-header'>Generated Image</h3>", unsafe_allow_html=True)
-    if 'image_url' in st.session_state and st.session_state.image_url:
+    if 'image_bytesio' in st.session_state and st.session_state.image_bytesio:
         try:
+            # Open image from BytesIO object
+            image_bytesio = st.session_state.image_bytesio
+            image_bytesio.seek(0)  # Reset pointer to beginning of file
+            image = Image.open(image_bytesio)
+            st.image(image, use_column_width=True)
+            
+            # Provide download link if file was saved
+            if 'image_filename' in st.session_state:
+                with open(st.session_state.image_filename, "rb") as file:
+                    btn = st.download_button(
+                        label="Download Image",
+                        data=file,
+                        file_name=st.session_state.image_filename,
+                        mime="image/png"
+                    )
+                    
+            # Also display the original URL if available
+            if 'image_url' in st.session_state:
+                st.markdown(f"[View Original Image]({st.session_state.image_url})")
+        except Exception as e:
+            st.error(f"Error displaying image: {e}")
+            # Fallback to URL if BytesIO fails
+            if 'image_url' in st.session_state:
+                st.markdown(f"[View Image]({st.session_state.image_url})")
+    elif 'image_url' in st.session_state:
+        try:
+            # Fallback to URL display if BytesIO not available
             response = requests.get(st.session_state.image_url)
             image = Image.open(BytesIO(response.content))
             st.image(image, use_column_width=True)
-            st.markdown(f"[Download Image]({st.session_state.image_url})")
+            st.markdown(f"[View Original Image]({st.session_state.image_url})")
         except Exception as e:
             st.error(f"Error displaying image: {e}")
+            st.markdown(f"[View Image]({st.session_state.image_url})")
     else:
         st.markdown(
             """
